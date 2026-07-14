@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Fix Referral Counts</title>
+    <style>
+        body { background: #0a0e17; color: #e0e8f0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: rgba(20, 28, 45, 0.9); border-radius: 16px; padding: 25px; border: 1px solid rgba(46, 204, 113, 0.15); margin-bottom: 20px; }
+        .btn { background: #2ecc71; border: none; padding: 12px 30px; border-radius: 8px; color: #fff; font-weight: 600; cursor: pointer; }
+        .btn:hover { background: #27ae60; }
+        .btn-danger { background: #e74c3c; }
+        .btn-danger:hover { background: #c0392b; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 15px 0; }
+        .stat-box { background: rgba(46, 204, 113, 0.05); padding: 15px; border-radius: 10px; text-align: center; border: 1px solid rgba(46, 204, 113, 0.1); }
+        .stat-number { font-size: 28px; font-weight: 700; color: #2ecc71; }
+        .stat-label { font-size: 12px; color: #8899bb; }
+        .log { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 13px; font-family: monospace; }
+        .log .success { color: #2ecc71; }
+        .log .error { color: #e74c3c; }
+        .log .info { color: #60a5fa; }
+        .progress-bar { width: 100%; height: 6px; background: #1a2635; border-radius: 3px; margin: 10px 0; overflow: hidden; }
+        .progress-fill { height: 100%; background: #2ecc71; width: 0%; transition: width 0.3s; }
+        input, select { background: #1a2635; border: 1px solid #2a3a50; padding: 10px 15px; border-radius: 8px; color: #e0e8f0; width: 100%; margin: 5px 0; }
+        .flex { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .note { background: rgba(251,191,36,0.1); padding: 12px 18px; border-radius: 8px; border-left: 4px solid #fbbf24; margin: 10px 0; color: #fbbf24; font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔧 Admin - Fix Referral Counts</h1>
+    <p style="color: #8899bb;">This tool will scan all users and fix referral counts without affecting other data.</p>
+    
+    <div class="note">
+        ⚠️ This tool ONLY updates <strong>totalReferrals</strong> and <strong>teamStructure</strong> fields.<br>
+        No wallet, package, transaction, or other user data will be touched.
+    </div>
+
+    <div class="card">
+        <h3>📊 Statistics</h3>
+        <div class="stats" id="stats">
+            <div class="stat-box">
+                <div class="stat-number" id="totalUsers">0</div>
+                <div class="stat-label">Total Users</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="totalFixed">0</div>
+                <div class="stat-label">Users Fixed</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="totalErrors">0</div>
+                <div class="stat-label">Errors</div>
+            </div>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="flex">
+            <button class="btn" id="scanBtn">🔍 Scan All Users</button>
+            <button class="btn btn-danger" id="fixBtn">✅ Fix All Users</button>
+            <button class="btn" id="previewBtn" style="background: #60a5fa;">👁️ Preview Changes</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>📝 Log</h3>
+        <div class="log" id="logContainer">
+            <div class="info">Ready to start...</div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getDatabase, ref, get, update, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyAz-TLmOhiy-_vHHmIjW8gyIOqTR_PT9o0",
+    authDomain: "rnd2-70080.firebaseapp.com",
+    databaseURL: "https://rnd2-70080-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "rnd2-70080",
+    storageBucket: "rnd2-70080.firebasestorage.app",
+    messagingSenderId: "468625887938",
+    appId: "1:468625887938:web:5cb4ddbcf31b6fc0a4615b"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let allUsers = {};
+let fixes = [];
+let totalUsers = 0;
+let fixedCount = 0;
+let errorCount = 0;
+
+function log(message, type = 'info') {
+    const container = document.getElementById('logContainer');
+    const div = document.createElement('div');
+    div.className = type;
+    div.textContent = message;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function updateProgress(percent) {
+    document.getElementById('progressFill').style.width = percent + '%';
+}
+
+function updateStats() {
+    document.getElementById('totalUsers').textContent = totalUsers;
+    document.getElementById('totalFixed').textContent = fixedCount;
+    document.getElementById('totalErrors').textContent = errorCount;
+}
+
+async function getAllUsers() {
+    log('📥 Fetching all users...', 'info');
+    const snapshot = await get(ref(db, 'users'));
+    if (snapshot.exists()) {
+        allUsers = snapshot.val();
+        totalUsers = Object.keys(allUsers).length;
+        log(`✅ Found ${totalUsers} users`, 'success');
+        updateStats();
+        return allUsers;
+    }
+    log('❌ No users found', 'error');
+    return {};
+}
+
+function calculateLevelMembers(userId, referralCode, level, allUsersCache) {
+    const members = [];
+    let currentLevel = 1;
+    
+    function findMembers(refCode, targetLevel, currentLevel) {
+        const result = [];
+        for (let uid in allUsersCache) {
+            const user = allUsersCache[uid];
+            if (user.referredBy === refCode && uid !== userId) {
+                result.push(uid);
+            }
+        }
+        if (currentLevel === targetLevel) {
+            return result;
+        }
+        let allNext = [];
+        for (let uid of result) {
+            const user = allUsersCache[uid];
+            const next = findMembers(user.referralCode, targetLevel, currentLevel + 1);
+            allNext = [...allNext, ...next];
+        }
+        return allNext;
+    }
+    
+    return findMembers(referralCode, level, 1);
+}
+
+function calculateCorrectCounts(userId, userData, allUsersCache) {
+    const referralCode = userData.referralCode;
+    if (!referralCode) return null;
+    
+    const level1 = calculateLevelMembers(userId, referralCode, 1, allUsersCache);
+    const level2 = calculateLevelMembers(userId, referralCode, 2, allUsersCache);
+    const level3 = calculateLevelMembers(userId, referralCode, 3, allUsersCache);
+    const level4 = calculateLevelMembers(userId, referralCode, 4, allUsersCache);
+    const level5 = calculateLevelMembers(userId, referralCode, 5, allUsersCache);
+    
+    const level1Count = level1.length;
+    const level2Count = level2.length;
+    const level3Count = level3.length;
+    const level4Count = level4.length;
+    const level5Count = level5.length;
+    
+    const totalReferrals = level1Count + level2Count + level3Count + level4Count + level5Count;
+    
+    return {
+        level1Count,
+        level2Count,
+        level3Count,
+        level4Count,
+        level5Count,
+        totalReferrals,
+        teamStructure: { level1: level1Count, level2: level2Count, level3: level3Count, level4: level4Count, level5: level5Count }
+    };
+}
+
+async function scanUsers() {
+    log('🔍 Starting scan...', 'info');
+    fixes = [];
+    fixedCount = 0;
+    errorCount = 0;
+    updateStats();
+    
+    const users = await getAllUsers();
+    if (!users || Object.keys(users).length === 0) return;
+    
+    let processed = 0;
+    const total = Object.keys(users).length;
+    
+    for (let [uid, userData] of Object.entries(users)) {
+        processed++;
+        updateProgress((processed / total) * 100);
+        
+        try {
+            const counts = calculateCorrectCounts(uid, userData, users);
+            if (!counts) continue;
+            
+            const currentTotal = userData.totalReferrals || 0;
+            const currentTeamStructure = userData.teamStructure || { level1: 0, level2: 0, level3: 0, level4: 0, level5: 0 };
+            
+            const isMismatch = 
+                currentTotal !== counts.totalReferrals ||
+                currentTeamStructure.level1 !== counts.level1Count ||
+                currentTeamStructure.level2 !== counts.level2Count ||
+                currentTeamStructure.level3 !== counts.level3Count ||
+                currentTeamStructure.level4 !== counts.level4Count ||
+                currentTeamStructure.level5 !== counts.level5Count;
+            
+            if (isMismatch) {
+                fixes.push({
+                    uid,
+                    username: userData.username || userData.referralCode || uid.substring(0, 8),
+                    current: {
+                        totalReferrals: currentTotal,
+                        teamStructure: currentTeamStructure
+                    },
+                    correct: {
+                        totalReferrals: counts.totalReferrals,
+                        teamStructure: counts.teamStructure
+                    }
+                });
+                log(`⚠️ ${userData.username || uid.substring(0, 8)}: Current=${currentTotal} → Correct=${counts.totalReferrals}`, 'info');
+            }
+        } catch (error) {
+            errorCount++;
+            log(`❌ Error processing ${uid}: ${error.message}`, 'error');
+        }
+    }
+    
+    updateStats();
+    log(`✅ Scan complete! Found ${fixes.length} users with mismatched counts.`, 'success');
+    updateProgress(100);
+}
+
+async function fixUsers() {
+    if (fixes.length === 0) {
+        log('ℹ️ No fixes to apply. Run scan first.', 'info');
+        return;
+    }
+    
+    log(`🔧 Starting fix for ${fixes.length} users...`, 'info');
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (let [index, fix] of fixes.entries()) {
+        updateProgress(((index + 1) / fixes.length) * 100);
+        
+        try {
+            const userRef = ref(db, 'users/' + fix.uid);
+            await update(userRef, {
+                totalReferrals: fix.correct.totalReferrals,
+                teamStructure: fix.correct.teamStructure
+            });
+            successCount++;
+            fixedCount++;
+            log(`✅ Fixed ${fix.username}: ${fix.current.totalReferrals} → ${fix.correct.totalReferrals}`, 'success');
+        } catch (error) {
+            failCount++;
+            errorCount++;
+            log(`❌ Failed to fix ${fix.uid}: ${error.message}`, 'error');
+        }
+    }
+    
+    updateStats();
+    log(`🎉 Fix complete! ${successCount} fixed, ${failCount} failed.`, 'success');
+    updateProgress(100);
+}
+
+async function previewChanges() {
+    if (fixes.length === 0) {
+        log('ℹ️ No preview available. Run scan first.', 'info');
+        return;
+    }
+    
+    log(`👁️ Preview of ${fixes.length} fixes:`, 'info');
+    fixes.forEach(fix => {
+        log(`  ${fix.username}: ${fix.current.totalReferrals} → ${fix.correct.totalReferrals} (L1: ${fix.current.teamStructure.level1}→${fix.correct.teamStructure.level1})`, 'info');
+    });
+}
+
+document.getElementById('scanBtn').addEventListener('click', scanUsers);
+document.getElementById('fixBtn').addEventListener('click', fixUsers);
+document.getElementById('previewBtn').addEventListener('click', previewChanges);
+
+log('🚀 Admin tool loaded. Click "Scan All Users" to start.', 'info');
+</script>
+</body>
+</html>
