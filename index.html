@@ -41,6 +41,7 @@
         .auth-section .btn { margin: 5px 0; }
         .flex { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .user-info { color: #2ecc71; font-size: 14px; padding: 8px 0; }
+        .admin-badge { background: #fbbf24; color: #0a0e17; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; margin-left: 8px; }
         @media (max-width: 600px) {
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .btn-group .btn { flex: 1; text-align: center; }
@@ -63,8 +64,8 @@
         <h3>🔐 Authentication Required</h3>
         <p style="color: #8899bb; font-size: 14px; margin-bottom: 12px;">Login with your admin account to access the database.</p>
         <div class="flex">
-            <input type="email" id="adminEmail" placeholder="Admin Email" value="admin@rnd2.com">
-            <input type="password" id="adminPassword" placeholder="Password" value="">
+            <input type="email" id="adminEmail" placeholder="Admin Email">
+            <input type="password" id="adminPassword" placeholder="Password">
             <button class="btn btn-primary" id="loginBtn">🔑 Login</button>
             <button class="btn btn-info" id="logoutBtn" style="display:none;">🚪 Logout</button>
         </div>
@@ -139,6 +140,7 @@ let errorCount = 0;
 let mismatchCount = 0;
 let isRunning = false;
 let currentUser = null;
+let isAdmin = false;
 
 // ============================================================
 // DOM REFS
@@ -180,28 +182,70 @@ function setStatus(text) {
 }
 
 // ============================================================
+// CHECK ADMIN ROLE
+// ============================================================
+async function checkAdminRole(user) {
+    try {
+        const snapshot = await get(ref(db, 'users/' + user.uid + '/role'));
+        if (snapshot.exists() && snapshot.val() === 'admin') {
+            isAdmin = true;
+            return true;
+        }
+        // Check if the user has admin role at root level
+        const rootSnapshot = await get(ref(db, 'users/' + user.uid));
+        if (rootSnapshot.exists()) {
+            const data = rootSnapshot.val();
+            if (data.role === 'admin') {
+                isAdmin = true;
+                return true;
+            }
+        }
+        isAdmin = false;
+        return false;
+    } catch (error) {
+        console.error('Error checking admin role:', error);
+        isAdmin = false;
+        return false;
+    }
+}
+
+// ============================================================
 // AUTH FUNCTIONS
 // ============================================================
-function showLoggedIn(user) {
+async function showLoggedIn(user) {
     currentUser = user;
-    authSection.querySelector('h3').textContent = '✅ Authenticated';
+    
+    // Check if user is admin
+    const isUserAdmin = await checkAdminRole(user);
+    
+    if (!isUserAdmin) {
+        log('❌ You are not an admin. Access denied.', 'error');
+        userInfo.innerHTML = `⚠️ User: ${user.email} - <span style="color:#e74c3c;">Not Admin</span>`;
+        setTimeout(() => {
+            signOut(auth);
+        }, 2000);
+        return;
+    }
+    
+    authSection.querySelector('h3').textContent = '✅ Authenticated as Admin';
     authSection.querySelector('p').style.display = 'none';
-    userInfo.textContent = `👤 Logged in as: ${user.email}`;
+    userInfo.innerHTML = `👤 Logged in as: <strong>${user.email}</strong> <span class="admin-badge">ADMIN</span>`;
     loginBtn.style.display = 'none';
     logoutBtn.style.display = 'inline-block';
     adminEmail.disabled = true;
     adminPassword.disabled = true;
     mainCard.style.display = 'block';
     logCard.style.display = 'block';
-    log('✅ Authentication successful!', 'success');
+    log('✅ Admin authentication successful!', 'success');
     log('🚀 Ready to scan users.', 'info');
 }
 
 function showLoggedOut() {
     currentUser = null;
+    isAdmin = false;
     authSection.querySelector('h3').textContent = '🔐 Authentication Required';
     authSection.querySelector('p').style.display = 'block';
-    userInfo.textContent = '';
+    userInfo.innerHTML = '';
     loginBtn.style.display = 'inline-block';
     logoutBtn.style.display = 'none';
     adminEmail.disabled = false;
@@ -226,7 +270,7 @@ async function handleLogin() {
     try {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         log(`✅ Login successful! Welcome ${userCredential.user.email}`, 'success');
-        showLoggedIn(userCredential.user);
+        await showLoggedIn(userCredential.user);
     } catch (error) {
         log(`❌ Login failed: ${error.message}`, 'error');
         if (error.code === 'auth/user-not-found') {
@@ -252,9 +296,9 @@ async function handleLogout() {
 // ============================================================
 // AUTH STATE LISTENER
 // ============================================================
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
     if (user) {
-        showLoggedIn(user);
+        await showLoggedIn(user);
     } else {
         showLoggedOut();
     }
@@ -339,6 +383,10 @@ async function scanUsers() {
         log('⚠️ Please login first', 'warn');
         return;
     }
+    if (!isAdmin) {
+        log('⚠️ Admin access required', 'warn');
+        return;
+    }
     
     isRunning = true;
     document.getElementById('scanBtn').disabled = true;
@@ -417,6 +465,10 @@ async function fixUsers() {
         log('⚠️ Please login first', 'warn');
         return;
     }
+    if (!isAdmin) {
+        log('⚠️ Admin access required', 'warn');
+        return;
+    }
     if (fixes.length === 0) {
         log('ℹ️ No fixes to apply. Run scan first.', 'info');
         return;
@@ -466,6 +518,10 @@ function previewChanges() {
         log('⚠️ Please login first', 'warn');
         return;
     }
+    if (!isAdmin) {
+        log('⚠️ Admin access required', 'warn');
+        return;
+    }
     if (fixes.length === 0) {
         log('ℹ️ No preview available. Run scan first.', 'info');
         return;
@@ -499,8 +555,6 @@ document.getElementById('previewBtn').addEventListener('click', previewChanges);
 // INITIAL LOG
 // ============================================================
 log('🚀 Admin tool loaded. Please login to continue.', 'info');
-log('💡 Default admin account: admin@rnd2.com', 'info');
-log('💡 You need to know the password to login.', 'info');
 
 console.log('Admin tool loaded. Login required for database access.');
 </script>
