@@ -29,23 +29,18 @@
         .btn-info { background: #3b82f6; }
         .btn-info:hover { background: #2563eb; transform: translateY(-1px); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
-        .log-container { background: rgba(0, 0, 0, 0.35); padding: 14px 18px; border-radius: 10px; max-height: 380px; overflow-y: auto; font-size: 13px; font-family: 'Courier New', monospace; }
+        .log-container { background: rgba(0, 0, 0, 0.35); padding: 14px 18px; border-radius: 10px; max-height: 450px; overflow-y: auto; font-size: 13px; font-family: 'Courier New', monospace; }
         .log-container .success { color: #2ecc71; }
         .log-container .error { color: #e74c3c; }
         .log-container .info { color: #60a5fa; }
         .log-container .warn { color: #fbbf24; }
         .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
         .status-text { font-size: 13px; color: #8899bb; margin-top: 8px; }
-        .auth-section { background: rgba(20, 28, 45, 0.85); border-radius: 16px; padding: 24px; border: 1px solid rgba(46, 204, 113, 0.12); margin-bottom: 20px; }
-        .auth-section input { background: #1a2635; border: 1px solid #2a3a50; padding: 10px 14px; border-radius: 8px; color: #e0e8f0; font-size: 14px; width: 100%; max-width: 300px; margin: 5px 0; }
-        .auth-section .btn { margin: 5px 0; }
         .flex { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        .user-info { color: #2ecc71; font-size: 14px; padding: 8px 0; }
-        .admin-badge { background: #fbbf24; color: #0a0e17; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+        .note { background: rgba(46, 204, 113, 0.05); padding: 10px 16px; border-radius: 8px; border-left: 3px solid #2ecc71; margin: 10px 0; color: #8899bb; font-size: 13px; }
         @media (max-width: 600px) {
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .btn-group .btn { flex: 1; text-align: center; }
-            .auth-section input { max-width: 100%; }
         }
     </style>
 </head>
@@ -59,21 +54,12 @@
         No wallet, package, transaction, or other user data will be touched.
     </div>
 
-    <!-- ====== AUTH SECTION ====== -->
-    <div class="auth-section" id="authSection">
-        <h3>🔐 Authentication Required</h3>
-        <p style="color: #8899bb; font-size: 14px; margin-bottom: 12px;">Login with your admin account to access the database.</p>
-        <div class="flex">
-            <input type="email" id="adminEmail" placeholder="Admin Email">
-            <input type="password" id="adminPassword" placeholder="Password">
-            <button class="btn btn-primary" id="loginBtn">🔑 Login</button>
-            <button class="btn btn-info" id="logoutBtn" style="display:none;">🚪 Logout</button>
-        </div>
-        <div id="userInfo" class="user-info"></div>
+    <div class="note">
+        ✅ <strong>No login required!</strong> This tool works directly with Firebase.
     </div>
 
     <!-- ====== MAIN CONTROLS ====== -->
-    <div class="card" id="mainCard" style="display:none;">
+    <div class="card">
         <h3>📊 Statistics</h3>
         <div class="stats-grid" id="statsGrid">
             <div class="stat-box">
@@ -101,21 +87,20 @@
             <button class="btn btn-danger" id="fixBtn">✅ Fix All Users</button>
             <button class="btn btn-info" id="previewBtn">👁️ Preview Changes</button>
         </div>
-        <div class="status-text" id="statusText">Ready</div>
+        <div class="status-text" id="statusText">Ready - Click "Scan All Users" to start</div>
     </div>
 
     <!-- ====== LOG ====== -->
-    <div class="card" id="logCard" style="display:none;">
+    <div class="card">
         <h3>📝 Log</h3>
         <div class="log-container" id="logContainer">
-            <div class="log-entry info">🚀 Admin tool ready. Login to start.</div>
+            <div class="log-entry info">🚀 Admin tool loaded. Click "Scan All Users" to start.</div>
         </div>
     </div>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
 import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -129,7 +114,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getDatabase(app);
 
 let allUsers = {};
@@ -139,31 +123,17 @@ let fixedCount = 0;
 let errorCount = 0;
 let mismatchCount = 0;
 let isRunning = false;
-let currentUser = null;
-let isAdmin = false;
-
-// ============================================================
-// DOM REFS
-// ============================================================
-const authSection = document.getElementById('authSection');
-const mainCard = document.getElementById('mainCard');
-const logCard = document.getElementById('logCard');
-const loginBtn = document.getElementById('loginBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const adminEmail = document.getElementById('adminEmail');
-const adminPassword = document.getElementById('adminPassword');
-const userInfo = document.getElementById('userInfo');
-const logContainer = document.getElementById('logContainer');
 
 // ============================================================
 // LOGGING
 // ============================================================
 function log(message, type = 'info') {
+    const container = document.getElementById('logContainer');
     const div = document.createElement('div');
     div.className = `log-entry ${type}`;
     div.textContent = message;
-    logContainer.appendChild(div);
-    logContainer.scrollTop = logContainer.scrollHeight;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 }
 
 function updateProgress(percent) {
@@ -180,129 +150,6 @@ function updateStats() {
 function setStatus(text) {
     document.getElementById('statusText').textContent = text;
 }
-
-// ============================================================
-// CHECK ADMIN ROLE
-// ============================================================
-async function checkAdminRole(user) {
-    try {
-        const snapshot = await get(ref(db, 'users/' + user.uid + '/role'));
-        if (snapshot.exists() && snapshot.val() === 'admin') {
-            isAdmin = true;
-            return true;
-        }
-        // Check if the user has admin role at root level
-        const rootSnapshot = await get(ref(db, 'users/' + user.uid));
-        if (rootSnapshot.exists()) {
-            const data = rootSnapshot.val();
-            if (data.role === 'admin') {
-                isAdmin = true;
-                return true;
-            }
-        }
-        isAdmin = false;
-        return false;
-    } catch (error) {
-        console.error('Error checking admin role:', error);
-        isAdmin = false;
-        return false;
-    }
-}
-
-// ============================================================
-// AUTH FUNCTIONS
-// ============================================================
-async function showLoggedIn(user) {
-    currentUser = user;
-    
-    // Check if user is admin
-    const isUserAdmin = await checkAdminRole(user);
-    
-    if (!isUserAdmin) {
-        log('❌ You are not an admin. Access denied.', 'error');
-        userInfo.innerHTML = `⚠️ User: ${user.email} - <span style="color:#e74c3c;">Not Admin</span>`;
-        setTimeout(() => {
-            signOut(auth);
-        }, 2000);
-        return;
-    }
-    
-    authSection.querySelector('h3').textContent = '✅ Authenticated as Admin';
-    authSection.querySelector('p').style.display = 'none';
-    userInfo.innerHTML = `👤 Logged in as: <strong>${user.email}</strong> <span class="admin-badge">ADMIN</span>`;
-    loginBtn.style.display = 'none';
-    logoutBtn.style.display = 'inline-block';
-    adminEmail.disabled = true;
-    adminPassword.disabled = true;
-    mainCard.style.display = 'block';
-    logCard.style.display = 'block';
-    log('✅ Admin authentication successful!', 'success');
-    log('🚀 Ready to scan users.', 'info');
-}
-
-function showLoggedOut() {
-    currentUser = null;
-    isAdmin = false;
-    authSection.querySelector('h3').textContent = '🔐 Authentication Required';
-    authSection.querySelector('p').style.display = 'block';
-    userInfo.innerHTML = '';
-    loginBtn.style.display = 'inline-block';
-    logoutBtn.style.display = 'none';
-    adminEmail.disabled = false;
-    adminPassword.disabled = false;
-    mainCard.style.display = 'none';
-    logCard.style.display = 'none';
-}
-
-async function handleLogin() {
-    const email = adminEmail.value.trim();
-    const password = adminPassword.value.trim();
-    
-    if (!email || !password) {
-        log('⚠️ Please enter email and password', 'warn');
-        return;
-    }
-    
-    loginBtn.disabled = true;
-    loginBtn.textContent = '⏳ Logging in...';
-    log(`🔑 Attempting login as: ${email}`, 'info');
-    
-    try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        log(`✅ Login successful! Welcome ${userCredential.user.email}`, 'success');
-        await showLoggedIn(userCredential.user);
-    } catch (error) {
-        log(`❌ Login failed: ${error.message}`, 'error');
-        if (error.code === 'auth/user-not-found') {
-            log('⚠️ User not found. Please check email.', 'warn');
-        } else if (error.code === 'auth/wrong-password') {
-            log('⚠️ Wrong password. Please try again.', 'warn');
-        }
-    }
-    loginBtn.disabled = false;
-    loginBtn.textContent = '🔑 Login';
-}
-
-async function handleLogout() {
-    try {
-        await signOut(auth);
-        log('👋 Logged out successfully', 'info');
-        showLoggedOut();
-    } catch (error) {
-        log(`❌ Logout failed: ${error.message}`, 'error');
-    }
-}
-
-// ============================================================
-// AUTH STATE LISTENER
-// ============================================================
-onAuthStateChanged(auth, async (user) => {
-    if (user) {
-        await showLoggedIn(user);
-    } else {
-        showLoggedOut();
-    }
-});
 
 // ============================================================
 // DATABASE FUNCTIONS
@@ -377,19 +224,15 @@ function calculateCorrectCounts(userId, userData, allUsersCache) {
     };
 }
 
+// ============================================================
+// SCAN USERS
+// ============================================================
 async function scanUsers() {
     if (isRunning) return;
-    if (!currentUser) {
-        log('⚠️ Please login first', 'warn');
-        return;
-    }
-    if (!isAdmin) {
-        log('⚠️ Admin access required', 'warn');
-        return;
-    }
     
     isRunning = true;
     document.getElementById('scanBtn').disabled = true;
+    document.getElementById('fixBtn').disabled = true;
     
     log('🔍 Starting scan...', 'info');
     setStatus('Scanning...');
@@ -404,6 +247,7 @@ async function scanUsers() {
     if (!users || Object.keys(users).length === 0) {
         isRunning = false;
         document.getElementById('scanBtn').disabled = false;
+        document.getElementById('fixBtn').disabled = false;
         return;
     }
     
@@ -456,19 +300,15 @@ async function scanUsers() {
     log(`✅ Scan complete! Found ${mismatchCount} users with mismatched counts.`, 'success');
     setStatus(`Scan complete - ${mismatchCount} mismatches found`);
     document.getElementById('scanBtn').disabled = false;
+    document.getElementById('fixBtn').disabled = false;
     isRunning = false;
 }
 
+// ============================================================
+// FIX USERS
+// ============================================================
 async function fixUsers() {
     if (isRunning) return;
-    if (!currentUser) {
-        log('⚠️ Please login first', 'warn');
-        return;
-    }
-    if (!isAdmin) {
-        log('⚠️ Admin access required', 'warn');
-        return;
-    }
     if (fixes.length === 0) {
         log('ℹ️ No fixes to apply. Run scan first.', 'info');
         return;
@@ -479,6 +319,7 @@ async function fixUsers() {
     }
     
     isRunning = true;
+    document.getElementById('scanBtn').disabled = true;
     document.getElementById('fixBtn').disabled = true;
     
     log(`🔧 Starting fix for ${fixes.length} users...`, 'info');
@@ -509,19 +350,15 @@ async function fixUsers() {
     updateProgress(100);
     log(`🎉 Fix complete! ${successCount} fixed, ${failCount} failed.`, 'success');
     setStatus(`Fix complete - ${successCount} users fixed`);
+    document.getElementById('scanBtn').disabled = false;
     document.getElementById('fixBtn').disabled = false;
     isRunning = false;
 }
 
+// ============================================================
+// PREVIEW CHANGES
+// ============================================================
 function previewChanges() {
-    if (!currentUser) {
-        log('⚠️ Please login first', 'warn');
-        return;
-    }
-    if (!isAdmin) {
-        log('⚠️ Admin access required', 'warn');
-        return;
-    }
     if (fixes.length === 0) {
         log('ℹ️ No preview available. Run scan first.', 'info');
         return;
@@ -539,14 +376,6 @@ function previewChanges() {
 // ============================================================
 // EVENT LISTENERS
 // ============================================================
-loginBtn.addEventListener('click', handleLogin);
-adminPassword.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleLogin();
-});
-adminEmail.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') adminPassword.focus();
-});
-logoutBtn.addEventListener('click', handleLogout);
 document.getElementById('scanBtn').addEventListener('click', scanUsers);
 document.getElementById('fixBtn').addEventListener('click', fixUsers);
 document.getElementById('previewBtn').addEventListener('click', previewChanges);
@@ -554,9 +383,10 @@ document.getElementById('previewBtn').addEventListener('click', previewChanges);
 // ============================================================
 // INITIAL LOG
 // ============================================================
-log('🚀 Admin tool loaded. Please login to continue.', 'info');
+log('🚀 Admin tool ready! No login required.', 'success');
+log('💡 Click "Scan All Users" to start.', 'info');
 
-console.log('Admin tool loaded. Login required for database access.');
+console.log('Admin tool loaded. No login required.');
 </script>
 </body>
 </html>
